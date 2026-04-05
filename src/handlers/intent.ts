@@ -233,7 +233,7 @@ export async function handleToolCall(
 
       logger.emitAudit({
         timestamp: new Date().toISOString(),
-        level: 'info',
+        level: result.isError ? 'error' : 'info',
         event: 'tool_call_end',
         requestId: reqId,
         user,
@@ -242,6 +242,7 @@ export async function handleToolCall(
         durationMs,
         status: result.isError ? 'error' : 'success',
         errorMessage: result.isError ? result.content[0]?.text : undefined,
+        errorClass: result.isError ? 'result-path' : undefined,
         resultSize,
         resultPreview,
       });
@@ -297,7 +298,6 @@ async function handleSAPRead(client: AdtClient, args: Record<string, unknown>): 
   if (isBtpSystem() && BTP_HINTS[type]) {
     return errorResult(BTP_HINTS[type]);
   }
-
   switch (type) {
     case 'PROG':
       return textResult(await client.getProgram(name));
