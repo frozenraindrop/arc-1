@@ -7,7 +7,12 @@
 # =============================================================================
 
 # --- Build Stage -------------------------------------------------------------
-FROM node:22-alpine AS builder
+# Run on the build platform (amd64 in CI) to avoid QEMU emulation issues
+# with native addon compilation (better-sqlite3 + node-gyp crashes under QEMU)
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
+
+ARG TARGETARCH
+ARG TARGETOS
 
 # better-sqlite3 requires build tools for native addon compilation
 RUN apk add --no-cache python3 make g++
@@ -25,6 +30,13 @@ RUN npm run build
 
 # Remove dev dependencies for smaller image
 RUN npm prune --omit=dev
+
+# Replace native binaries with the correct target platform prebuilts.
+# prebuild-install downloads the prebuilt .node file for the target arch
+# without needing QEMU emulation.
+RUN cd node_modules/better-sqlite3 && \
+    rm -rf build prebuilds && \
+    npx --yes prebuild-install -r napi --platform ${TARGETOS} --arch ${TARGETARCH}
 
 # --- Runtime Stage -----------------------------------------------------------
 FROM node:22-alpine
