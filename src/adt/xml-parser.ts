@@ -17,6 +17,8 @@
 import { XMLParser } from 'fast-xml-parser';
 import type {
   AdtSearchResult,
+  BspAppInfo,
+  BspFileNode,
   ClassMetadata,
   DataElementInfo,
   DomainInfo,
@@ -471,6 +473,66 @@ export function parseServiceBinding(xml: string): string {
   };
 
   return JSON.stringify(result, null, 2);
+}
+
+// ─── BSP / UI5 Filestore Parsers ────────────────────────────────────
+
+/**
+ * Parse BSP app list from /sap/bc/adt/filestore/ui5-bsp/objects.
+ *
+ * Returns an Atom feed where each entry has:
+ * - <atom:title> → app name
+ * - <atom:summary> → description
+ */
+export function parseBspAppList(xml: string): BspAppInfo[] {
+  const parsed = parseXml(xml);
+  const entries = getNestedArray(parsed, 'feed', 'entry');
+  return entries.map((entry: Record<string, unknown>) => {
+    const summary = entry.summary;
+    // <atom:summary type="text">desc</atom:summary> → fast-xml-parser returns {#text, @_type} when attributes present
+    const description =
+      typeof summary === 'string' ? summary : String((summary as Record<string, unknown>)?.['#text'] ?? '');
+    return {
+      name: String(entry.title ?? ''),
+      description,
+    };
+  });
+}
+
+/**
+ * Parse BSP folder listing from /sap/bc/adt/filestore/ui5-bsp/objects/{app}/content.
+ *
+ * Each entry has:
+ * - <atom:category term="file|folder"/> → type
+ * - <atom:title> → full path like "APPNAME/Component.js"
+ * - <atom:content afr:etag="..."> → etag for files
+ *
+ * We extract the relative path by stripping the appName prefix,
+ * and the file/folder name from the last path segment.
+ */
+export function parseBspFolderListing(xml: string, appName: string): BspFileNode[] {
+  const parsed = parseXml(xml);
+  const entries = getNestedArray(parsed, 'feed', 'entry');
+  return entries.map((entry: Record<string, unknown>) => {
+    const title = String(entry.title ?? '');
+    const category = entry.category as Record<string, unknown> | undefined;
+    const term = String(category?.['@_term'] ?? 'file');
+    const nodeType = term === 'folder' ? 'folder' : 'file';
+    const content = entry.content as Record<string, unknown> | undefined;
+    const etag = content?.['@_etag'];
+
+    // Path relative to app root
+    const path = title.startsWith(appName) ? title.substring(appName.length) : `/${title}`;
+    // Name is the last segment
+    const name = title.split('/').pop() || title;
+
+    return {
+      name,
+      path,
+      type: nodeType,
+      ...(etag != null ? { etag: String(etag) } : {}),
+    };
+  });
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
