@@ -43,6 +43,7 @@ export interface ResolvedFeatures {
   amdp: FeatureStatus;
   ui5: FeatureStatus;
   transport: FeatureStatus;
+  ui5repo: FeatureStatus;
   /** Detected SAP_BASIS release (e.g. "750", "757"). Populated during probe. */
   abapRelease?: string;
   /** Detected system type: 'btp' (SAP_CLOUD component present) or 'onprem'. */
@@ -306,6 +307,14 @@ export interface BspFileNode {
   path: string;
   type: 'file' | 'folder';
   etag?: string;
+}
+
+/** BSP deploy info from ABAP Repository OData Service */
+export interface BspDeployInfo {
+  name: string;
+  package: string;
+  description: string;
+  info: string;
 }
 
 /** Transaction code metadata */

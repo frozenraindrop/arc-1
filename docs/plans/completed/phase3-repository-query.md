@@ -61,14 +61,14 @@ Unit tests with mock HTTP. For OData JSON responses, create simple inline mocks 
 
 Create a new module for the ABAP Repository OData Service with read operations.
 
-- [ ] Add `BspDeployInfo` interface to `src/adt/types.ts`: `{ name: string; package: string; description: string; info: string }`
-- [ ] Create `src/adt/ui5-repository.ts` with constant `SERVICE_PATH = '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV'`
-- [ ] Implement `getAppInfo(http: AdtHttpClient, safety: SafetyConfig, appName: string): Promise<BspDeployInfo | undefined>` — `GET ${SERVICE_PATH}/Repositories('${encodeURIComponent(appName)}')` with headers `Accept: application/json` and query `$format=json`. Parse response `{ d: { Name, Package, Description, Info } }`. Return `undefined` on 404. Safety check: `checkOperation(safety, OperationType.Read, 'GetBSPDeployInfo')`
-- [ ] Implement `downloadApp(http: AdtHttpClient, safety: SafetyConfig, appName: string): Promise<Buffer | undefined>` — same GET with additional query params `CodePage=UTF8&DownloadFiles=RUNTIME`. Extract `ZipArchive` field from response, decode from base64 to Buffer. Return `undefined` if `ZipArchive` is empty.
-- [ ] Implement `probeService(http: AdtHttpClient): Promise<boolean>` — `HEAD ${SERVICE_PATH}`, return true on 2xx/405, false on 404
-- [ ] Handle CSRF: For GET operations, include `X-Csrf-Token: Fetch` header. Store the returned token from the `x-csrf-token` response header on the http client for future write operations (Phase 4).
-- [ ] Add unit tests (~8 tests) in `tests/unit/adt/ui5-repository.test.ts`: getAppInfo happy path, getAppInfo returns undefined on 404, getAppInfo parses OData JSON correctly, downloadApp returns Buffer, downloadApp returns undefined when empty, probeService true on 200, probeService false on 404, safety check blocks
-- [ ] Run `npm test` — all tests must pass
+- [x] Add `BspDeployInfo` interface to `src/adt/types.ts`: `{ name: string; package: string; description: string; info: string }`
+- [x] Create `src/adt/ui5-repository.ts` with constant `SERVICE_PATH = '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV'`
+- [x] Implement `getAppInfo(http: AdtHttpClient, safety: SafetyConfig, appName: string): Promise<BspDeployInfo | undefined>` — `GET ${SERVICE_PATH}/Repositories('${encodeURIComponent(appName)}')` with headers `Accept: application/json` and query `$format=json`. Parse response `{ d: { Name, Package, Description, Info } }`. Return `undefined` on 404. Safety check: `checkOperation(safety, OperationType.Read, 'GetBSPDeployInfo')`
+- [x] Implement `downloadApp(http: AdtHttpClient, safety: SafetyConfig, appName: string): Promise<Buffer | undefined>` — same GET with additional query params `CodePage=UTF8&DownloadFiles=RUNTIME`. Extract `ZipArchive` field from response, decode from base64 to Buffer. Return `undefined` if `ZipArchive` is empty.
+- [x] Implement `probeService(http: AdtHttpClient): Promise<boolean>` — `HEAD ${SERVICE_PATH}`, return true on 2xx/405, false on 404
+- [x] Handle CSRF: For GET operations, include `X-Csrf-Token: Fetch` header. Store the returned token from the `x-csrf-token` response header on the http client for future write operations (Phase 4).
+- [x] Add unit tests (~8 tests) in `tests/unit/adt/ui5-repository.test.ts`: getAppInfo happy path, getAppInfo returns undefined on 404, getAppInfo parses OData JSON correctly, downloadApp returns Buffer, downloadApp returns undefined when empty, probeService true on 200, probeService false on 404, safety check blocks
+- [x] Run `npm test` — all tests must pass
 
 ### Task 2: Add feature probe
 
@@ -78,11 +78,11 @@ Create a new module for the ABAP Repository OData Service with read operations.
 
 Add a feature probe for the ABAP Repository OData Service.
 
-- [ ] Add `{ id: 'ui5repo', endpoint: '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV', description: 'UI5 ABAP Repository Deploy' }` to the `PROBES` array at `src/adt/features.ts:33`
-- [ ] Add `ui5repo: FeatureStatus` to the `FeatureResults` type in `src/adt/types.ts` (near the existing `ui5: FeatureStatus` field)
-- [ ] Add `SAP_FEATURE_UI5REPO` environment variable support in `src/server/config.ts` and `src/server/types.ts` following the existing `SAP_FEATURE_UI5` pattern
-- [ ] Add unit test (~2 tests) to verify the probe is included and resolves correctly
-- [ ] Run `npm test` — all tests must pass
+- [x] Add `{ id: 'ui5repo', endpoint: '/sap/opu/odata/UI5/ABAP_REPOSITORY_SRV', description: 'UI5 ABAP Repository Deploy' }` to the `PROBES` array at `src/adt/features.ts:33`
+- [x] Add `ui5repo: FeatureStatus` to the `FeatureResults` type in `src/adt/types.ts` (near the existing `ui5: FeatureStatus` field)
+- [x] Add `SAP_FEATURE_UI5REPO` environment variable support in `src/server/config.ts` and `src/server/types.ts` following the existing `SAP_FEATURE_UI5` pattern
+- [x] Add unit test (~2 tests) to verify the probe is included and resolves correctly
+- [x] Run `npm test` — all tests must pass
 
 ### Task 3: Wire up SAPRead handler
 
@@ -93,16 +93,16 @@ Add a feature probe for the ABAP Repository OData Service.
 
 Expose the OData query via `SAPRead(type="BSP_DEPLOY")`.
 
-- [ ] Add `'BSP_DEPLOY'` to `SAPREAD_TYPES_ONPREM` at `src/handlers/schemas.ts:17` and `SAPREAD_TYPES_BTP` at line ~45
-- [ ] Update SAPRead description strings in `src/handlers/tools.ts` to include: `BSP_DEPLOY (query deployed UI5 apps via ABAP Repository Service — returns name, package, description)`
-- [ ] Add `BSP_DEPLOY` case in `handleSAPRead` at `src/handlers/intent.ts`. Call `getAppInfo(http, safety, name)`. If result is undefined, return "App not found". Otherwise return JSON.stringify of the metadata.
-- [ ] Add handler unit tests (~3 tests): BSP_DEPLOY returns metadata, returns "not found" for missing app, feature gate
-- [ ] Run `npm test` — all tests must pass
+- [x] Add `'BSP_DEPLOY'` to `SAPREAD_TYPES_ONPREM` at `src/handlers/schemas.ts:17` and `SAPREAD_TYPES_BTP` at line ~45
+- [x] Update SAPRead description strings in `src/handlers/tools.ts` to include: `BSP_DEPLOY (query deployed UI5 apps via ABAP Repository Service — returns name, package, description)`
+- [x] Add `BSP_DEPLOY` case in `handleSAPRead` at `src/handlers/intent.ts`. Call `getAppInfo(http, safety, name)`. If result is undefined, return "App not found". Otherwise return JSON.stringify of the metadata.
+- [x] Add handler unit tests (~3 tests): BSP_DEPLOY returns metadata, returns "not found" for missing app, feature gate
+- [x] Run `npm test` — all tests must pass
 
 ### Task 4: Final verification
 
-- [ ] Run full test suite: `npm test` — all tests pass
-- [ ] Run typecheck: `npm run typecheck` — no errors
-- [ ] Run lint: `npm run lint` — no errors
-- [ ] Document in a comment in `src/adt/ui5-repository.ts` that CSRF token sharing with ADT needs manual verification on a real SAP system
-- [ ] Move this plan to `docs/plans/completed/`
+- [x] Run full test suite: `npm test` — all tests pass
+- [x] Run typecheck: `npm run typecheck` — no errors
+- [x] Run lint: `npm run lint` — no errors
+- [x] Document in a comment in `src/adt/ui5-repository.ts` that CSRF token sharing with ADT needs manual verification on a real SAP system
+- [x] Move this plan to `docs/plans/completed/`
