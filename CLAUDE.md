@@ -238,6 +238,7 @@ ADT Client Method (adt/client.ts, crud.ts, devtools.ts, etc.)
 HTTP Request (adt/http.ts)
   │
   ├─ CSRF token management (auto-fetch via HEAD, refresh on 403)
+  ├─ Content negotiation fallback (one-retry on 406/415 with header mutation)
   ├─ Cookie/session management
   ├─ Stateful sessions for lock→modify→unlock sequences
   │
@@ -330,14 +331,17 @@ checkOperation(this.safety, OperationType.Create, 'CreateObject');
 
 ```typescript
 await http.withStatefulSession(async (session) => {
-  const lockHandle = await lockObject(session, objectUrl);
+  const lock = await lockObject(session, objectUrl);
+  const effectiveTransport = transport ?? (lock.corrNr || undefined);
   try {
-    await updateSource(session, sourceUrl, source, lockHandle, transport);
+    await updateSource(session, safety, sourceUrl, source, lock.lockHandle, effectiveTransport);
   } finally {
-    await unlockObject(session, objectUrl, lockHandle);
+    await unlockObject(session, objectUrl, lock.lockHandle);
   }
 });
 ```
+
+**Note:** `lockObject()` returns `{ lockHandle, corrNr }`. When the caller omits `transport`, `safeUpdateSource()` and the delete flow automatically use `lock.corrNr` if present. Explicit `transport` always takes precedence.
 
 ## Testing
 
@@ -365,7 +369,7 @@ Every code change requires tests. See `docs/testing-skip-policy.md` for the full
 ### Skip Policy (`tests/helpers/skip-policy.ts`)
 
 - `requireOrSkip(ctx, value, reason)` — skip if nullish, narrow type otherwise
-- `SkipReason` constants: `NO_CREDENTIALS`, `NO_FIXTURE`, `BACKEND_UNSUPPORTED`, etc.
+- `SkipReason` constants: `NO_CREDENTIALS`, `NO_FIXTURE`, `BACKEND_UNSUPPORTED`, `NO_TRANSPORT_PACKAGE`, etc.
 - **Valid:** missing credentials, fixture not on system, unsupported backend. **Invalid:** early return without skip, empty catch blocks.
 
 ### Error Assertions (`tests/helpers/expected-error.ts`)
