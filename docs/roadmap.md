@@ -80,7 +80,7 @@ Every other SAP MCP server today runs on the developer's local machine — unman
 | 37 | FEAT-37 | DCL (Access Control) Read/Write | P1 | S | Features |
 | 38 | FEAT-38 | ADT Service Discovery (MIME Negotiation) | P0 | S | Features |
 | 39 | FEAT-39 | Transport Enhancements (delete, reassign, types) | P2 | S | Features | ✅ Completed (K/W/T types; S/R deferred) |
-| 40 | FEAT-40 | FLP Launchpad Management (OData) | P1 | M | Features |
+| ~~40~~ | ~~FEAT-40~~ | ~~FLP Launchpad Management (OData)~~ | ~~P1~~ | ~~M~~ | ~~Completed 2026-04-12~~ |
 | 41 | FEAT-41 | ABAP Unit Test Coverage (statement-level) | P2 | S | Features |
 | 42 | FEAT-42 | ATC Output Formats (JUnit4, checkstyle, codeclimate) | P2 | XS | Features |
 | 43 | FEAT-43 | DDIC Auth & Misc Read (Authorization Fields, Feature Toggles) | P2 | S | Features |
@@ -98,6 +98,7 @@ Every other SAP MCP server today runs on the developer's local machine — unman
 | FEAT-08 | Content-Type 415/406 Auto-Retry | 2026-04-12 | Features |
 | FEAT-14 | 401 Session Timeout Auto-Retry | 2026-04-12 | Features |
 | FEAT-15 | Namespace URL Encoding Audit | 2026-04-12 | Features |
+| FEAT-40 | FLP Launchpad Management (OData) | 2026-04-12 | Features |
 | SEC-08 | OAuth Security Hardening (RFC 9700) | 2026-04-08 | Security |
 | — | AFF Structured Class Read | 2026-04-08 |  Features |
 | — | AFF Batch Object Creation | 2026-04-08 | Features |
@@ -150,7 +151,7 @@ Every other SAP MCP server today runs on the developer's local machine — unman
 
 ### Phase B: Core Value Features (P1)
 7. **FEAT-37** DCL (Access Control) Read/Write (S) — missing CDS access control objects; sapcli, VSP have this. Critical for RAP development workflow.
-8. **FEAT-40** FLP Launchpad Management (M) — OData-based Fiori Launchpad customization (catalogs, groups, tiles). sapcli has full implementation via `/sap/opu/odata/UI2/PAGE_BUILDER_CUST`. High value for enterprise Fiori rollout automation.
+8. ~~**FEAT-40** FLP Launchpad Management (M)~~ — **completed 2026-04-12**
 9. **FEAT-17** Type Auto-Mappings for SAPWrite (XS) — eliminate LLM type code confusion
 10. **FEAT-12** Fix Proposals / Auto-Fix (S) — safer than LLM-guessed fixes
 11. **FEAT-16** Error Intelligence (S) — actionable hints for SAP errors (subsumes SEC-03)
@@ -231,7 +232,7 @@ Every other SAP MCP server today runs on the developer's local machine — unman
 | **Effort** | S (1-2 days) |
 | **Risk** | Low |
 | **Usefulness** | Low — most deployments use reverse proxy for TLS termination |
-| **Status** | Not started |
+| **Status** | Completed (2026-04-12) |
 | **Source** | [fr0ster tracker: TLS evaluation](../compare/fr0ster/evaluations/tls-https-support.md) |
 
 **What:** Add native TLS support to the HTTP Streamable transport. fr0ster added this in v4.6.0 with `--tls-cert`/`--tls-key` flags. Currently ARC-1 requires a reverse proxy (nginx, CF router) for HTTPS.
@@ -1008,7 +1009,7 @@ SAP_RATE_LIMIT_BURST=10  # burst allowance
 | **Effort** | M (3-5 days) |
 | **Risk** | Medium — OData API, different from ADT REST |
 | **Usefulness** | Very High — enterprise Fiori rollout automation |
-| **Status** | Not started |
+| **Status** | Completed (2026-04-12) |
 | **Source** | [sapcli comparison](../compare/09-sapcli.md), sapcli `sap/cli/flp.py` + `sap/odata/` |
 
 **What:** Manage Fiori Launchpad configuration: catalogs, groups, target mappings, and tile assignments. Uses OData service `/sap/opu/odata/UI2/PAGE_BUILDER_CUST` (on-prem) or equivalent BTP API.
@@ -1016,12 +1017,11 @@ SAP_RATE_LIMIT_BURST=10  # burst allowance
 **Why:** Fiori Launchpad configuration is a major pain point in SAP projects. Automating catalog/group/tile setup via LLM saves hours of manual work per role. This is the kind of high-value enterprise automation that differentiates ARC-1 from developer-only tools.
 
 **Implementation:**
-- New `src/adt/flp.ts` module — OData client for PAGE_BUILDER_CUST
-- Operations: list catalogs, list groups, list target mappings, create/assign tiles, create catalog/group entries
-- New `SAPManage` action: `flp_catalog_list`, `flp_group_list`, `flp_assign_tile`, etc.
-- Alternatively: new FLP-specific tool if operations are complex enough
-- Safety: gated by write permissions; read operations always allowed
-- Consider pyodata-style OData parsing or use existing `src/adt/ui5-repository.ts` pattern
+- `src/adt/flp.ts` — OData client for PAGE_BUILDER_CUST with double-JSON tile config handling
+- SAPManage actions: `flp_list_catalogs`, `flp_list_groups`, `flp_list_tiles`, `flp_create_catalog`, `flp_create_group`, `flp_create_tile`, `flp_add_tile_to_group`, `flp_delete_catalog`
+- Feature-gated via `featureFlp` config (auto-probed at startup)
+- Write ops use `OperationType.Workflow` — blocked by `readOnly: true`
+- Graceful ASSERTION_FAILED handling for problematic catalogs
 
 ---
 

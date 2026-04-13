@@ -355,8 +355,37 @@ export const SAPContextSchemaBtp = z.object({
 
 // ─── SAPManage ──────────────────────────────────────────────────────
 
+const flpTileSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  icon: z.string().optional(),
+  semanticObject: z.string(),
+  semanticAction: z.string(),
+  url: z.string().optional(),
+  subtitle: z.string().optional(),
+  info: z.string().optional(),
+});
+
 export const SAPManageSchema = z.object({
-  action: z.enum(['features', 'probe', 'cache_stats']),
+  action: z.enum([
+    'features',
+    'probe',
+    'cache_stats',
+    'flp_list_catalogs',
+    'flp_list_groups',
+    'flp_list_tiles',
+    'flp_create_catalog',
+    'flp_create_group',
+    'flp_create_tile',
+    'flp_add_tile_to_group',
+    'flp_delete_catalog',
+  ]),
+  catalogId: z.string().optional(),
+  groupId: z.string().optional(),
+  title: z.string().optional(),
+  domainId: z.string().optional(),
+  tileInstanceId: z.string().optional(),
+  tile: flpTileSchema.optional(),
 });
 
 // ─── Hyperfocused SAP ───────────────────────────────────────────────
