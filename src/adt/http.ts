@@ -96,7 +96,6 @@ export class AdtHttpClient {
   private cookieJar: Map<string, string> = new Map();
   /** Guard to prevent infinite retry loops for DB connection errors */
   private dbRetryInProgress = false;
-
   constructor(config: AdtHttpConfig) {
     this.config = config;
 
@@ -220,12 +219,13 @@ export class AdtHttpClient {
     const url = this.buildUrl(path);
     const httpStart = Date.now();
 
-    // Per-request guard to prevent infinite retry loops for 406/415 negotiation
+    // Per-request guards to prevent infinite retry loops
     let negotiationRetried = false;
+    let authRetried = false;
 
     try {
-      const response = await this.doFetch(url, method, headers, body);
-      const responseBody = await response.text();
+      let response = await this.doFetch(url, method, headers, body);
+      let responseBody = await response.text();
 
       // Persist any Set-Cookie headers from the response
       this.storeCookies(response);
@@ -289,6 +289,73 @@ export class AdtHttpClient {
         } finally {
           this.dbRetryInProgress = false;
         }
+      }
+
+      // Handle 401 session timeout — reset session and retry once.
+      // Uses per-request guard (not instance-level) so concurrent requests each get their own retry.
+      // On success, reassigns response/responseBody and falls through to downstream handlers
+      // (403 CSRF, 406/415 negotiation) so combined-failure recovery works.
+      if (response.status === 401 && !authRetried) {
+        authRetried = true;
+
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'warn',
+          event: 'http_request',
+          method,
+          path,
+          statusCode: 401,
+          durationMs: Date.now() - httpStart,
+          errorBody: '401 session expired — resetting session and retrying',
+        });
+
+        // Clear session to force fresh authentication
+        this.resetSession();
+
+        // Re-apply auth credentials
+        this.applyAuthHeader(headers);
+        if (this.config.bearerTokenProvider) {
+          const token = await this.config.bearerTokenProvider();
+          headers.Authorization = `Bearer ${token}`;
+        }
+
+        // Re-fetch CSRF token for modifying requests
+        if (isModifyingMethod(method)) {
+          await this.fetchCsrfToken();
+          headers['X-CSRF-Token'] = this.csrfToken;
+        }
+
+        // Rebuild cookie header from config cookies + fresh jar
+        const freshCookieParts: string[] = [];
+        if (this.config.cookies) {
+          for (const [k, v] of Object.entries(this.config.cookies)) {
+            freshCookieParts.push(`${k}=${v}`);
+          }
+        }
+        for (const [k, v] of this.cookieJar) {
+          freshCookieParts.push(`${k}=${v}`);
+        }
+        if (freshCookieParts.length > 0) {
+          headers.Cookie = freshCookieParts.join('; ');
+        } else {
+          delete headers.Cookie;
+        }
+
+        response = await this.doFetch(url, method, headers, body);
+        responseBody = await response.text();
+        this.storeCookies(response);
+
+        logger.emitAudit({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          event: 'http_request',
+          method,
+          path,
+          statusCode: response.status,
+          durationMs: Date.now() - httpStart,
+          errorBody: '401 session retry completed',
+        });
+        // Fall through to downstream handlers (403/406/415/normal)
       }
 
       // Handle CSRF token refresh on 403 (modifying requests only)
