@@ -5,11 +5,14 @@ import {
   escapeXmlAttr,
   findDeepNodes,
   parseApiReleaseState,
+  parseAuthorizationField,
   parseBspAppList,
   parseBspFolderListing,
   parseClassMetadata,
   parseDataElementMetadata,
   parseDomainMetadata,
+  parseEnhancementImplementation,
+  parseFeatureToggleStates,
   parseFunctionGroup,
   parseInactiveObjects,
   parseInstalledComponents,
@@ -435,6 +438,96 @@ describe('XML Parser', () => {
       expect(dtel.description).toBe('Test Element');
       expect(dtel.typeKind).toBe('');
       expect(dtel.typeName).toBe('');
+    });
+  });
+
+  // ─── parseAuthorizationField ─────────────────────────────────────
+
+  describe('parseAuthorizationField', () => {
+    it('parses authorization field metadata from real SAP fixture (fields under <auth:content>)', () => {
+      const xml = loadFixture('authorization-field.xml');
+      const auth = parseAuthorizationField(xml);
+      expect(auth.name).toBe('BUKRS');
+      expect(auth.description).toBe('Company Code');
+      expect(auth.roleName).toBe('BUKRS');
+      expect(auth.checkTable).toBe('T001');
+      expect(auth.domainName).toBe('BUKRS');
+      expect(auth.outputLength).toBe('000004');
+      expect(auth.package).toBe('BF');
+      expect(auth.orgLevelInfo).toEqual(['Field is not defined as Organizational level.']);
+      expect(auth.masterLanguage).toBe('DE');
+    });
+
+    it('handles minimal authorization field XML', () => {
+      const xml =
+        '<auth:auth xmlns:auth="http://www.sap.com/iam/auth" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:description="Test auth"/>';
+      const auth = parseAuthorizationField(xml);
+      expect(auth.name).toBe('');
+      expect(auth.description).toBe('Test auth');
+      expect(auth.roleName).toBe('');
+      expect(auth.orgLevelInfo).toEqual([]);
+      expect(auth.package).toBe('');
+    });
+  });
+
+  // ─── parseFeatureToggleStates ────────────────────────────────────
+
+  describe('parseFeatureToggleStates', () => {
+    it('parses feature toggle states from real SAP fixture (uppercase STATES wrapper)', () => {
+      const json = loadFixture('feature-toggle-states.json');
+      const toggle = parseFeatureToggleStates(json, 'SFW_SWITCH_TOGGLE');
+      expect(toggle.name).toBe('SFW_SWITCH_TOGGLE');
+      expect(toggle.clientState).toBe('off');
+      expect(toggle.userState).toBe('undefined');
+      expect(toggle.states).toHaveLength(2);
+      expect(toggle.states[0]).toEqual({ client: '000', state: 'off', description: 'SAP SE' });
+      expect(toggle.states[1]).toEqual({ client: '001', state: 'off', description: 'SAP SE' });
+      expect(toggle.userStates).toEqual([]);
+    });
+
+    it('normalizes unknown state values', () => {
+      const toggle = parseFeatureToggleStates(
+        '{"STATES":{"NAME":"Z","CLIENT_STATE":"","USER_STATE":"","CLIENT_STATES":[{"CLIENT":"100","STATE":"maybe"}],"USER_STATES":[]}}',
+        'Z',
+      );
+      expect(toggle.states[0]?.state).toBe('unknown');
+    });
+  });
+
+  // ─── parseEnhancementImplementation ──────────────────────────────
+
+  describe('parseEnhancementImplementation', () => {
+    it('parses enhancement implementation metadata from real SAP fixture', () => {
+      const xml = loadFixture('enhancement-implementation.xml');
+      const enho = parseEnhancementImplementation(xml);
+      expect(enho.name).toBe('SFW_BCF_TCD');
+      expect(enho.description).toBe('TCD Lookup, Assignment...');
+      expect(enho.package).toBe('SFWTOOLS');
+      expect(enho.technology).toBe('BADI_IMPL');
+      expect(enho.switchSupported).toBe(true);
+      expect(enho.badiImplementations).toHaveLength(2);
+      expect(enho.badiImplementations[0]).toEqual({
+        name: 'SFW_TCD',
+        shortText: 'Implementierung: BCF: BADI für TCD Remote Service',
+        implementingClass: 'CL_SFW_TCD',
+        badiDefinition: 'BCF_TCD_REMOTE_BADI',
+        enhancementSpot: 'BCF_REMOTE_TCD',
+        active: true,
+        default: false,
+      });
+      expect(enho.badiImplementations[1]?.default).toBe(true);
+      expect(enho.badiImplementations[1]?.active).toBe(false);
+    });
+
+    it('handles minimal enhancement implementation XML', () => {
+      const xml =
+        '<enho:objectData xmlns:enho="http://www.sap.com/adt/enhancements/enho" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZENHO" adtcore:description="Test"/>';
+      const enho = parseEnhancementImplementation(xml);
+      expect(enho.name).toBe('ZENHO');
+      expect(enho.description).toBe('Test');
+      expect(enho.package).toBe('');
+      expect(enho.technology).toBe('');
+      expect(enho.badiImplementations).toEqual([]);
     });
   });
 

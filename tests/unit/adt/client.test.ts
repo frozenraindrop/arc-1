@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdtApiError, AdtSafetyError } from '../../../src/adt/errors.js';
 import { unrestrictedSafetyConfig } from '../../../src/adt/safety.js';
@@ -11,6 +13,9 @@ vi.mock('undici', async (importOriginal) => {
 });
 
 const { AdtClient } = await import('../../../src/adt/client.js');
+
+const fixturesDir = join(import.meta.dirname, '../../fixtures/xml');
+const loadFixture = (name: string) => readFileSync(join(fixturesDir, name), 'utf-8');
 
 /** Default mock: returns ABAP source code for any request */
 function setupDefaultMock() {
@@ -337,6 +342,59 @@ describe('AdtClient', () => {
       expect(tran.code).toBe('SE38');
       expect(tran.description).toBe('ABAP Editor');
       expect(tran.package).toBe('SEDT');
+    });
+
+    it('getAuthorizationField returns parsed metadata', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(mockResponse(200, loadFixture('authorization-field.xml'), { 'x-csrf-token': 'T' }));
+      const client = createClient();
+      const auth = await client.getAuthorizationField('BUKRS');
+      expect(auth.name).toBe('BUKRS');
+      expect(auth.checkTable).toBe('T001');
+      expect(auth.roleName).toBe('BUKRS');
+      expect(auth.domainName).toBe('BUKRS');
+      expect(auth.outputLength).toBe('000004');
+      expect(auth.package).toBe('BF');
+      expect(auth.orgLevelInfo).toEqual(['Field is not defined as Organizational level.']);
+    });
+
+    it('getFeatureToggle returns parsed states', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, loadFixture('feature-toggle-states.json'), { 'x-csrf-token': 'T' }),
+      );
+      const client = createClient();
+      const toggle = await client.getFeatureToggle('SFW_SWITCH_TOGGLE');
+      expect(toggle.name).toBe('SFW_SWITCH_TOGGLE');
+      expect(toggle.clientState).toBe('off');
+      expect(toggle.userState).toBe('undefined');
+      expect(toggle.states).toEqual([
+        { client: '000', state: 'off', description: 'SAP SE' },
+        { client: '001', state: 'off', description: 'SAP SE' },
+      ]);
+      expect(toggle.userStates).toEqual([]);
+    });
+
+    it('getEnhancementImplementation returns parsed metadata', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValue(
+        mockResponse(200, loadFixture('enhancement-implementation.xml'), { 'x-csrf-token': 'T' }),
+      );
+      const client = createClient();
+      const enho = await client.getEnhancementImplementation('SFW_BCF_TCD');
+      expect(enho.name).toBe('SFW_BCF_TCD');
+      expect(enho.package).toBe('SFWTOOLS');
+      expect(enho.technology).toBe('BADI_IMPL');
+      expect(enho.switchSupported).toBe(true);
+      expect(enho.badiImplementations).toHaveLength(2);
+      expect(enho.badiImplementations[0]).toMatchObject({
+        name: 'SFW_TCD',
+        implementingClass: 'CL_SFW_TCD',
+        badiDefinition: 'BCF_TCD_REMOTE_BADI',
+        enhancementSpot: 'BCF_REMOTE_TCD',
+        active: true,
+        default: false,
+      });
     });
   });
 

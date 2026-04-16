@@ -454,3 +454,55 @@ export interface InactiveObject {
   uri: string;
   description?: string;
 }
+
+// ─── Authorization & Switch Framework Types ────────────────────────
+
+/** Authorization field metadata from /sap/bc/adt/aps/iam/auth/{name} */
+export interface AuthorizationFieldInfo {
+  name: string;
+  description: string;
+  roleName: string;
+  checkTable: string;
+  domainName: string;
+  outputLength: string;
+  conversionExit: string;
+  exitFunctionModule: string;
+  package: string;
+  orgLevelInfo: string[];
+  masterLanguage: string;
+}
+
+/** Feature toggle states from /sap/bc/adt/sfw/featuretoggles/{name}/states */
+export interface FeatureToggleInfo {
+  name: string;
+  clientState: string;
+  userState: string;
+  states: Array<{
+    client: string;
+    state: 'on' | 'off' | 'unknown';
+    description?: string;
+  }>;
+  userStates: Array<{
+    client: string;
+    user: string;
+    state: 'on' | 'off' | 'unknown';
+  }>;
+}
+
+/** Enhancement implementation metadata from /sap/bc/adt/enhancements/enhoxhb/{name} */
+export interface EnhancementImplementationInfo {
+  name: string;
+  description: string;
+  package: string;
+  technology: string;
+  switchSupported: boolean;
+  badiImplementations: Array<{
+    name: string;
+    shortText: string;
+    implementingClass: string;
+    badiDefinition: string;
+    enhancementSpot: string;
+    active: boolean;
+    default: boolean;
+  }>;
+}

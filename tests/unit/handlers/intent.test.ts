@@ -532,6 +532,103 @@ describe('Intent Handler', () => {
       expect(parsed.searchHelp).toBe('C_T001');
     });
 
+    it('reads an authorization field (AUTH)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<auth:auth xmlns:auth="http://www.sap.com/iam/auth" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="BUKRS" adtcore:description="Company code" adtcore:masterLanguage="EN">
+  <adtcore:packageRef adtcore:name="SF"/>
+  <auth:content>
+    <auth:fieldName>BUKRS</auth:fieldName>
+    <auth:rollName>BUKRS</auth:rollName>
+    <auth:checkTable>T001</auth:checkTable>
+    <auth:domname>BUKRS</auth:domname>
+    <auth:outputlen>4</auth:outputlen>
+    <auth:orglvlinfo>true</auth:orglvlinfo>
+  </auth:content>
+</auth:auth>`,
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'AUTH',
+        name: 'BUKRS',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.name).toBe('BUKRS');
+      expect(parsed.checkTable).toBe('T001');
+      expect(parsed.orgLevelInfo).toEqual(['true']);
+    });
+
+    it('reads feature toggle states (FTG2)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          JSON.stringify({
+            STATES: {
+              NAME: 'ABC_TOGGLE',
+              CLIENT_STATE: 'on',
+              USER_STATE: 'undefined',
+              CLIENT_STATES: [{ CLIENT: '001', DESCRIPTION: 'Dev', STATE: 'on' }],
+              USER_STATES: [],
+            },
+          }),
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'FTG2',
+        name: 'ABC_TOGGLE',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.name).toBe('ABC_TOGGLE');
+      expect(parsed.clientState).toBe('on');
+      expect(parsed.states).toEqual([{ client: '001', state: 'on', description: 'Dev' }]);
+    });
+
+    it('reads enhancement implementation metadata (ENHO)', async () => {
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(
+        mockResponse(
+          200,
+          `<?xml version="1.0" encoding="utf-8"?>
+<enho:objectData xmlns:enho="http://www.sap.com/adt/enhancements/enho" xmlns:enhcore="http://www.sap.com/abapsource/enhancementscore" xmlns:adtcore="http://www.sap.com/adt/core" adtcore:name="ZMY_BADI_IMPL" adtcore:description="Test impl">
+  <adtcore:packageRef adtcore:name="ZPKG"/>
+  <enho:contentCommon enho:toolType="BADI_IMPL" enho:switchSupported="false"/>
+  <enho:contentSpecific>
+    <enho:badiTechnology>
+      <enho:badiImplementations>
+        <enho:badiImplementation enho:name="ZMY_BADI_IMPL_A" enho:shortText="First" enho:active="true" enho:default="false">
+          <enho:enhancementSpot adtcore:name="ENH_SPOT_EXAMPLE"/>
+          <enho:badiDefinition adtcore:name="BADI_DEF_A"/>
+          <enho:implementingClass adtcore:name="ZCL_BADI_IMPL_A"/>
+        </enho:badiImplementation>
+      </enho:badiImplementations>
+    </enho:badiTechnology>
+  </enho:contentSpecific>
+</enho:objectData>`,
+        ),
+      );
+
+      const result = await handleToolCall(createClient(), DEFAULT_CONFIG, 'SAPRead', {
+        type: 'ENHO',
+        name: 'ZMY_BADI_IMPL',
+      });
+      expect(result.isError).toBeUndefined();
+      const parsed = JSON.parse(result.content[0]!.text);
+      expect(parsed.name).toBe('ZMY_BADI_IMPL');
+      expect(parsed.technology).toBe('BADI_IMPL');
+      expect(parsed.badiImplementations).toHaveLength(1);
+      expect(parsed.badiImplementations[0].implementingClass).toBe('ZCL_BADI_IMPL_A');
+      expect(parsed.badiImplementations[0].badiDefinition).toBe('BADI_DEF_A');
+      expect(parsed.badiImplementations[0].enhancementSpot).toBe('ENH_SPOT_EXAMPLE');
+    });
+
     it('reads a transaction (TRAN)', async () => {
       mockFetch.mockReset();
       // First call: transaction metadata

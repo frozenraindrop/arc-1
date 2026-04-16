@@ -311,6 +311,115 @@ describe('ADT Integration Tests', () => {
       expect(dtel.searchHelp).toBe('C_T001');
     });
 
+    it('reads authorization field metadata (AUTH/BUKRS)', async (ctx) => {
+      try {
+        const auth = await client.getAuthorizationField('BUKRS');
+        expect(auth.name).toBe('BUKRS');
+        expect(auth.checkTable).toBe('T001');
+        expect(Array.isArray(auth.orgLevelInfo)).toBe(true);
+      } catch (err) {
+        expectSapFailureClass(err, [404], [/not found/i, /does not exist/i]);
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: Auth Fields ADT endpoint not available on this kernel`,
+        );
+      }
+    });
+
+    it('reads feature toggle state (FTG2) when available', async (ctx) => {
+      const toggleName = process.env.TEST_FEATURE_TOGGLE || 'ABC_TOGGLE';
+      try {
+        const toggle = await client.getFeatureToggle(toggleName);
+        expect(toggle.name).toBeTruthy();
+        expect(Array.isArray(toggle.states)).toBe(true);
+      } catch (err) {
+        // Feature toggles are often unavailable or empty on plain A4H systems.
+        expectSapFailureClass(err, [404, 403], [/not found/i, /no authorization/i, /forbidden/i]);
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: Feature toggle endpoint unavailable or unauthorized on this system`,
+        );
+      }
+    });
+
+    it('reads enhancement implementation metadata (ENHO) when a fixture exists', async (ctx) => {
+      const byName = process.env.TEST_ENHO_NAME?.trim();
+      const candidateNames: string[] = [];
+
+      if (byName) {
+        candidateNames.push(byName);
+      } else {
+        try {
+          const candidates = await client.searchObject('ENHO*', 20);
+          for (const row of candidates) {
+            if (String(row.objectType).startsWith('ENHO') && row.objectName) {
+              candidateNames.push(row.objectName);
+            }
+          }
+        } catch (err) {
+          expectSapFailureClass(err, [404, 403, 500], [/search/i, /not found/i]);
+          requireOrSkip(
+            ctx,
+            undefined,
+            `${SkipReason.BACKEND_UNSUPPORTED}: Could not search ENHO objects on this backend`,
+          );
+        }
+        // Append known-good SAP-delivered ENHO names as fallbacks.
+        // The A4H developer trial system has many malformed ENHO_ADT_TEST* fixtures
+        // that return SAP server-side defects; SFW_BCF_TCD is a clean SAP example.
+        for (const wellKnown of ['SFW_BCF_TCD']) {
+          if (!candidateNames.includes(wellKnown)) {
+            candidateNames.push(wellKnown);
+          }
+        }
+      }
+
+      requireOrSkip(ctx, candidateNames[0], 'No enhancement implementation fixture found for ENHO read test');
+
+      // Try each candidate — some ENHO objects exist in TADIR but fail with
+      // "Dereferencing of the NULL reference" (HTTP 500) or similar SAP server-side
+      // defects. Accept the first one that parses cleanly.
+      let parsed = false;
+      let lastErr: unknown;
+      for (const name of candidateNames) {
+        try {
+          const enho = await client.getEnhancementImplementation(name);
+          expect(enho.name).toBeTruthy();
+          expect(Array.isArray(enho.badiImplementations)).toBe(true);
+          parsed = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+
+      if (!parsed) {
+        // No usable fixture — classify the last error and skip if backend-unsupported.
+        // Accept a wide range of SAP server-side defects that certain malformed ENHO
+        // fixtures throw (NULL ref, type conflicts, activation state issues, etc.).
+        expectSapFailureClass(
+          lastErr,
+          [400, 403, 404, 500],
+          [
+            /not found/i,
+            /forbidden/i,
+            /no authorization/i,
+            /null reference/i,
+            /application server error/i,
+            /type conflict/i,
+            /parameter passing/i,
+          ],
+        );
+        requireOrSkip(
+          ctx,
+          undefined,
+          `${SkipReason.BACKEND_UNSUPPORTED}: No readable ENHO fixture on this system (all candidates returned server errors)`,
+        );
+      }
+    });
+
     it('reads transaction metadata (SE38)', async () => {
       const tran = await client.getTransaction('SE38');
       expect(tran.code).toBe('SE38');
