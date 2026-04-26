@@ -337,7 +337,26 @@ describe('Feature Detection', () => {
           { name: 'ZCUSTOM_DEVELOPMENT' },
           { name: 'ZLOCAL' },
         ]),
-      ).toBe(true);
+      ).toBe(true); // S4FND triggers the rule
+    });
+
+    it('returns false on real-world NetWeaver 7.50 SP02 trial (AnyDB / SAP MaxDB, no HANA)', () => {
+      // Captured from the NPL 7.50 SP02 dev-edition trial system
+      // (tests/fixtures/probe/npl-750-sp02-dev-edition/meta.json).
+      // Regression guard: the heuristic must not false-positive on plain NetWeaver +
+      // SAP_BW (BW on AnyDB ≠ BW/4HANA), and BI_CONT must not match HDB|HANA.
+      expect(
+        detectHanaFromComponents([
+          { name: 'BI_CONT' },
+          { name: 'DMIS' },
+          { name: 'SAP_ABA' },
+          { name: 'SAP_BASIS' },
+          { name: 'SAP_BW' },
+          { name: 'SAP_GWFND' },
+          { name: 'SAP_UI' },
+          { name: 'ST-PI' },
+        ]),
+      ).toBe(false);
     });
   });
 
