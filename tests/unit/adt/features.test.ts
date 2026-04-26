@@ -4,6 +4,7 @@ import type { FeatureConfig } from '../../../src/adt/config.js';
 import { AdtApiError } from '../../../src/adt/errors.js';
 import {
   classifyAuthProbeError,
+  classifyFeatureProbeStatus,
   detectHanaFromComponents,
   detectSystemType,
   mapSapReleaseToAbaplintVersion,
@@ -508,6 +509,128 @@ describe('Feature Detection', () => {
       const client = mockProbeClientHanaScenario({ componentsXml: nonHanaComponents, hanaEndpoint404: true });
       const result = await probeFeatures(client, defaultConfig);
       expect(result.hana.available).toBe(false);
+    });
+
+    // ─── HTTP status classification (regression for the 401-as-available bug) ──
+
+    function mockProbeClientStatus(hanainfoStatus: number): AdtHttpClient {
+      return {
+        get: vi.fn().mockImplementation((url: string) => {
+          if (url === '/sap/bc/adt/discovery') return Promise.resolve({ statusCode: 200, body: discoveryXml });
+          if (url === '/sap/bc/adt/system/components') {
+            return Promise.resolve({
+              statusCode: 200,
+              body: makeComponentsXml([{ id: 'SAP_BASIS', title: '750;SAPKB75002;0002;SAP Basis Component' }]),
+            });
+          }
+          if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
+            if (hanainfoStatus >= 400) {
+              return Promise.reject(new AdtApiError(`HTTP ${hanainfoStatus}`, hanainfoStatus, url));
+            }
+            return Promise.resolve({ statusCode: hanainfoStatus, body: '' });
+          }
+          // Other probes: return success so we can isolate the hana-status assertion.
+          return Promise.resolve({ statusCode: 200, body: '' });
+        }),
+      } as unknown as AdtHttpClient;
+    }
+
+    it('classifies hanainfo 401 as unavailable (regression: was incorrectly true)', async () => {
+      const client = mockProbeClientStatus(401);
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/auth failure \(401\)/);
+    });
+
+    it('classifies hanainfo 403 as unavailable (user lacks authorization)', async () => {
+      const client = mockProbeClientStatus(403);
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/forbidden \(403\)/);
+    });
+
+    it('classifies hanainfo 404 as unavailable (endpoint not registered)', async () => {
+      const client = mockProbeClientStatus(404);
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/endpoint not found \(404\)|not available/);
+    });
+
+    it('classifies hanainfo 400 as available (endpoint exists, request shape rejected)', async () => {
+      const client = mockProbeClientStatus(400);
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(true);
+    });
+
+    it('classifies hanainfo 500 as available (endpoint exists, server error)', async () => {
+      const client = mockProbeClientStatus(500);
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(true);
+    });
+
+    it('treats network error (no AdtApiError) as unavailable', async () => {
+      const client = {
+        get: vi.fn().mockImplementation((url: string) => {
+          if (url === '/sap/bc/adt/discovery') return Promise.resolve({ statusCode: 200, body: discoveryXml });
+          if (url === '/sap/bc/adt/system/components') {
+            return Promise.resolve({
+              statusCode: 200,
+              body: makeComponentsXml([{ id: 'SAP_BASIS', title: '750;SAPKB75002;0002;SAP Basis Component' }]),
+            });
+          }
+          if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') return Promise.reject(new Error('ECONNRESET'));
+          return Promise.resolve({ statusCode: 200, body: '' });
+        }),
+      } as unknown as AdtHttpClient;
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(false);
+      expect(result.hana.message).toMatch(/network error|not available/);
+    });
+
+    it('surfaces inferred-from-components reason when fallback overrides 404', async () => {
+      const s4Components = makeComponentsXml([
+        { id: 'SAP_BASIS', title: '758;SAPKB75801;0001;SAP Basis Component' },
+        { id: 'S4FND', title: '108;S4FND108;0001;S/4HANA Foundation' },
+      ]);
+      const client = mockProbeClientHanaScenario({ componentsXml: s4Components, hanaEndpoint404: true });
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(true);
+      expect(result.hana.message).toMatch(/inferred from installed components/);
+    });
+  });
+
+  // ─── classifyFeatureProbeStatus ────────────────────────────────────
+
+  describe('classifyFeatureProbeStatus', () => {
+    it('returns available=true on 2xx', () => {
+      expect(classifyFeatureProbeStatus('hana', 200)).toEqual({ id: 'hana', available: true });
+      expect(classifyFeatureProbeStatus('rap', 204)).toEqual({ id: 'rap', available: true });
+    });
+
+    it('returns available=false with auth-failure reason on 401', () => {
+      const r = classifyFeatureProbeStatus('hana', 401);
+      expect(r.available).toBe(false);
+      expect(r.reason).toMatch(/auth failure \(401\)/);
+    });
+
+    it('returns available=false with forbidden reason on 403', () => {
+      const r = classifyFeatureProbeStatus('amdp', 403);
+      expect(r.available).toBe(false);
+      expect(r.reason).toMatch(/forbidden \(403\)/);
+    });
+
+    it('returns available=false with not-found reason on 404', () => {
+      const r = classifyFeatureProbeStatus('amdp', 404);
+      expect(r.available).toBe(false);
+      expect(r.reason).toMatch(/endpoint not found \(404\)/);
+    });
+
+    it('returns available=true on 400 / 405 / 500 (endpoint exists, request rejected)', () => {
+      // 400 = e.g. /ddic/ddl/sources without query params; 405 = wrong method;
+      // 500 = backend error from a registered endpoint. All three confirm endpoint presence.
+      expect(classifyFeatureProbeStatus('rap', 400).available).toBe(true);
+      expect(classifyFeatureProbeStatus('hana', 405).available).toBe(true);
+      expect(classifyFeatureProbeStatus('hana', 500).available).toBe(true);
     });
   });
 
