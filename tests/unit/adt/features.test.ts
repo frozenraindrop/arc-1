@@ -6,6 +6,7 @@ import {
   classifyAuthProbeError,
   classifyFeatureProbeStatus,
   detectHanaFromComponents,
+  detectHanaFromDiscovery,
   detectSystemType,
   mapSapReleaseToAbaplintVersion,
   probeAuthorization,
@@ -361,6 +362,18 @@ describe('Feature Detection', () => {
     });
   });
 
+  // ─── detectHanaFromDiscovery ───────────────────────────────────────
+
+  describe('detectHanaFromDiscovery', () => {
+    it('returns true when NHI is present', () => {
+      expect(detectHanaFromDiscovery(true)).toBe(true);
+    });
+
+    it('returns false when NHI is absent', () => {
+      expect(detectHanaFromDiscovery(false)).toBe(false);
+    });
+  });
+
   // ─── probeFeatures (with discovery) ───────────────────────────────
 
   describe('probeFeatures', () => {
@@ -596,6 +609,92 @@ describe('Feature Detection', () => {
       const result = await probeFeatures(client, defaultConfig);
       expect(result.hana.available).toBe(true);
       expect(result.hana.message).toMatch(/inferred from installed components/);
+    });
+
+    // ─── Discovery-based HANA fallback ────────────────────────────────
+
+    const nhiDiscoveryXml = `<?xml version="1.0" encoding="utf-8"?>
+<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom">
+  <app:workspace>
+    <atom:title>HANA-Integration</atom:title>
+    <app:collection href="/sap/bc/adt/nhi/repositories">
+      <atom:title>NHI Repositories</atom:title>
+    </app:collection>
+    <app:collection href="/sap/bc/adt/nhi/configurations">
+      <atom:title>NHI Configurations</atom:title>
+    </app:collection>
+  </app:workspace>
+</app:service>`;
+
+    const emptyComponentsXml = `<?xml version="1.0" encoding="utf-8"?>
+<atom:feed xmlns:atom="http://www.w3.org/2005/Atom"/>`;
+
+    function mockProbeClientDiscoveryScenario(options: {
+      componentsXml: string;
+      discoveryXml: string;
+      hanaEndpoint404: boolean;
+    }): AdtHttpClient {
+      return {
+        get: vi.fn().mockImplementation((url: string) => {
+          if (url === '/sap/bc/adt/discovery') {
+            return Promise.resolve({ statusCode: 200, body: options.discoveryXml });
+          }
+          if (url === '/sap/bc/adt/system/components') {
+            return Promise.resolve({ statusCode: 200, body: options.componentsXml });
+          }
+          if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
+            if (options.hanaEndpoint404) {
+              return Promise.reject(new AdtApiError('Not Found', 404, url));
+            }
+            return Promise.resolve({ statusCode: 200, body: '' });
+          }
+          return Promise.resolve({ statusCode: 200, body: '' });
+        }),
+      } as unknown as AdtHttpClient;
+    }
+
+    it('detects HANA via NHI workspace when components feed is empty and hanainfo 404', async () => {
+      // Regression case: systems where /sap/bc/adt/system/components returns an empty feed
+      // AND hanainfo is not activated. Discovery NHI workspace is the last resort.
+      const client = mockProbeClientDiscoveryScenario({
+        componentsXml: emptyComponentsXml,
+        discoveryXml: nhiDiscoveryXml,
+        hanaEndpoint404: true,
+      });
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(true);
+      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
+    });
+
+    it('reports HANA unavailable when all three signals are absent', async () => {
+      const client = mockProbeClientDiscoveryScenario({
+        componentsXml: emptyComponentsXml,
+        discoveryXml: discoveryXml, // standard fixture — no NHI
+        hanaEndpoint404: true,
+      });
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(false);
+    });
+
+    it('promotes hana to available via NHI even when hanainfo returns 401', async () => {
+      // 401 on hanainfo means auth failure on THAT endpoint, not that HANA is absent.
+      // The discovery NHI signal is from a separate, independently-trusted 200 OK response
+      // and should still override the hanainfo auth failure.
+      const client = {
+        get: vi.fn().mockImplementation((url: string) => {
+          if (url === '/sap/bc/adt/discovery') return Promise.resolve({ statusCode: 200, body: nhiDiscoveryXml });
+          if (url === '/sap/bc/adt/system/components') {
+            return Promise.resolve({ statusCode: 200, body: emptyComponentsXml });
+          }
+          if (url === '/sap/bc/adt/ddic/sysinfo/hanainfo') {
+            return Promise.reject(new AdtApiError('Unauthorized', 401, url));
+          }
+          return Promise.resolve({ statusCode: 200, body: '' });
+        }),
+      } as unknown as AdtHttpClient;
+      const result = await probeFeatures(client, defaultConfig);
+      expect(result.hana.available).toBe(true);
+      expect(result.hana.message).toMatch(/NHI|Native HANA Integration/);
     });
   });
 

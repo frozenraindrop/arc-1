@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { fetchDiscoveryDocument, resolveAcceptType, resolveContentType } from '../../../src/adt/discovery.js';
+import {
+  fetchDiscoveryDocument,
+  hasNhiWorkspace,
+  resolveAcceptType,
+  resolveContentType,
+} from '../../../src/adt/discovery.js';
 import type { AdtHttpClient } from '../../../src/adt/http.js';
 import { parseDiscoveryDocument } from '../../../src/adt/xml-parser.js';
 
@@ -87,7 +92,7 @@ describe('ADT Discovery', () => {
     it('fetches and parses discovery document successfully', async () => {
       const xml = loadFixture('discovery.xml');
       const client = mockClient(async () => ({ body: xml }));
-      const map = await fetchDiscoveryDocument(client);
+      const { map } = await fetchDiscoveryDocument(client);
       expect(map.size).toBe(9);
       expect((client as any).get).toHaveBeenCalledWith('/sap/bc/adt/discovery', {
         Accept: 'application/atomsvc+xml',
@@ -98,7 +103,7 @@ describe('ADT Discovery', () => {
       const client = mockClient(async () => {
         throw { statusCode: 404 };
       });
-      const map = await fetchDiscoveryDocument(client);
+      const { map } = await fetchDiscoveryDocument(client);
       expect(map).toEqual(new Map());
     });
 
@@ -106,7 +111,7 @@ describe('ADT Discovery', () => {
       const client = mockClient(async () => {
         throw { statusCode: 406 };
       });
-      const map = await fetchDiscoveryDocument(client);
+      const { map } = await fetchDiscoveryDocument(client);
       expect(map).toEqual(new Map());
     });
 
@@ -114,8 +119,57 @@ describe('ADT Discovery', () => {
       const client = mockClient(async () => {
         throw new Error('ECONNRESET');
       });
-      const map = await fetchDiscoveryDocument(client);
+      const { map } = await fetchDiscoveryDocument(client);
       expect(map).toEqual(new Map());
+    });
+
+    it('sets nhiPresent=true when NHI hrefs appear in discovery XML', async () => {
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<app:service xmlns:app="http://www.w3.org/2007/app" xmlns:atom="http://www.w3.org/2005/Atom">
+  <app:workspace>
+    <atom:title>HANA-Integration</atom:title>
+    <app:collection href="/sap/bc/adt/nhi/repositories">
+      <atom:title>NHI Repositories</atom:title>
+    </app:collection>
+  </app:workspace>
+</app:service>`;
+      const client = mockClient(async () => ({ body: xml }));
+      const { map, nhiPresent } = await fetchDiscoveryDocument(client);
+      expect(nhiPresent).toBe(true);
+      expect(map.size).toBe(0); // NHI collections have no <app:accept>
+    });
+
+    it('sets nhiPresent=false when NHI hrefs are absent', async () => {
+      const xml = loadFixture('discovery.xml');
+      const client = mockClient(async () => ({ body: xml }));
+      const { nhiPresent } = await fetchDiscoveryDocument(client);
+      expect(nhiPresent).toBe(false);
+    });
+
+    it('sets nhiPresent=false when discovery fails', async () => {
+      const client = mockClient(async () => {
+        throw new Error('ECONNRESET');
+      });
+      const { nhiPresent } = await fetchDiscoveryDocument(client);
+      expect(nhiPresent).toBe(false);
+    });
+  });
+
+  describe('hasNhiWorkspace', () => {
+    it('returns true when NHI href is present', () => {
+      expect(hasNhiWorkspace('<app:collection href="/sap/bc/adt/nhi/repositories">')).toBe(true);
+    });
+
+    it('returns true for any NHI sub-path', () => {
+      expect(hasNhiWorkspace('/sap/bc/adt/nhi/configurations')).toBe(true);
+    });
+
+    it('returns false for standard ADT hrefs', () => {
+      expect(hasNhiWorkspace('<app:collection href="/sap/bc/adt/oo/classes">')).toBe(false);
+    });
+
+    it('returns false for empty string', () => {
+      expect(hasNhiWorkspace('')).toBe(false);
     });
   });
 

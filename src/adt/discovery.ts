@@ -4,15 +4,30 @@ import type { AdtHttpClient } from './http.js';
 import type { DiscoveryMap } from './types.js';
 import { parseDiscoveryDocument } from './xml-parser.js';
 
+export interface DiscoveryFetchResult {
+  map: DiscoveryMap;
+  /** True when the discovery document contains any NHI (Native HANA Integration) endpoint. */
+  nhiPresent: boolean;
+}
+
+/**
+ * Return true when the raw ADT discovery XML contains at least one NHI collection href.
+ * NHI (/sap/bc/adt/nhi/*) workspaces are only registered on HANA-based systems.
+ * Exported for unit testing.
+ */
+export function hasNhiWorkspace(xml: string): boolean {
+  return /\/sap\/bc\/adt\/nhi\//.test(xml);
+}
+
 /**
  * Fetch ADT discovery service document.
  *
- * Graceful degradation: never throws, always returns a map.
+ * Graceful degradation: never throws, always returns a result.
  */
-export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<DiscoveryMap> {
+export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<DiscoveryFetchResult> {
   try {
     const resp = await client.get('/sap/bc/adt/discovery', { Accept: 'application/atomsvc+xml' });
-    return parseDiscoveryDocument(resp.body);
+    return { map: parseDiscoveryDocument(resp.body), nhiPresent: hasNhiWorkspace(resp.body) };
   } catch (err) {
     const reason =
       err instanceof AdtApiError
@@ -21,7 +36,7 @@ export async function fetchDiscoveryDocument(client: AdtHttpClient): Promise<Dis
           ? err.message
           : String(err ?? 'unknown');
     logger.warn(`ADT discovery unavailable (${reason}) — continuing without proactive MIME negotiation`);
-    return new Map();
+    return { map: new Map(), nhiPresent: false };
   }
 }
 

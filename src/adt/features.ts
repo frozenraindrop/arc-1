@@ -103,7 +103,7 @@ export async function probeFeatures(
   const probesToRun = PROBES.filter((p) => modeMap[p.id] === 'auto');
 
   // Run feature probes + system detection + text search probe + auth probe + discovery in parallel
-  const [probeResults, systemDetection, textSearchResult, authProbeResult, discoveryMap] = await Promise.all([
+  const [probeResults, systemDetection, textSearchResult, authProbeResult, discoveryResult] = await Promise.all([
     Promise.all(
       probesToRun.map(async (probe) => {
         try {
@@ -124,6 +124,8 @@ export async function probeFeatures(
     fetchDiscoveryDocument(client),
   ]);
 
+  const { map: discoveryMap, nhiPresent: discoveryNhiPresent } = discoveryResult;
+
   // Build result map keyed by feature id, carrying both availability and any diagnostic reason.
   const resultMap = new Map<string, ProbeOutcome>();
   for (const result of probeResults) {
@@ -136,6 +138,16 @@ export async function probeFeatures(
     resultMap.set('hana', {
       available: true,
       reason: 'inferred from installed components (hanainfo endpoint absent)',
+    });
+  }
+
+  // Discovery-based HANA detection: NHI (Native HANA Integration) workspaces are only
+  // registered on HANA-based systems. Fires when both the hanainfo probe and the components
+  // feed failed to confirm HANA (e.g. empty components feed + hanainfo 404).
+  if (!resultMap.get('hana')?.available && discoveryNhiPresent && modeMap.hana === 'auto') {
+    resultMap.set('hana', {
+      available: true,
+      reason: 'inferred from ADT discovery document (NHI workspace present — Native HANA Integration)',
     });
   }
 
@@ -228,6 +240,17 @@ async function detectSystemFromComponents(client: AdtHttpClient): Promise<System
   } catch {
     return {};
   }
+}
+
+/**
+ * Detect HANA presence from ADT discovery document NHI signal (exported for testing).
+ *
+ * NHI (Native HANA Integration) workspaces at /sap/bc/adt/nhi/* are only registered
+ * on HANA-based SAP systems. This is the last fallback when both the hanainfo endpoint
+ * probe and the software components feed fail to produce a signal.
+ */
+export function detectHanaFromDiscovery(nhiPresent: boolean): boolean {
+  return nhiPresent;
 }
 
 /**
